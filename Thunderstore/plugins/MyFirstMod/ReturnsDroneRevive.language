@@ -1,0 +1,14 @@
+{
+  "strings": {
+    "DRONECOMPARTMENT_NAME": "FALLBACK DEFAULT LANGUAGE Drone Compartment",
+    "DRONECOMPARTMENT_PICKUP": "FALLBACK DEFAULT LANGUAGE Items have been safely stored",
+    "DRONECOMPARTMENT_DESC": "FALLBACK DEFAULT LANGUAGE Your items have been safely stored until you can respawn.",
+    "DRONECOMPARTMENT_LORE": "FALLBACK DEFAULT LANGUAGE You must be willing to sacrifice everything for a seconds chance at life. Was it worth it?"
+  },
+  "en": {
+    "DRONECOMPARTMENT_NAME": "ENGLISH Drone Compartment",
+    "DRONECOMPARTMENT_PICKUP": "ENGLISH Items have been safely stored",
+    "DRONECOMPARTMENT_DESC": "ENGLISH Your items have been safely stored until you can respawn.",
+    "DRONECOMPARTMENT_LORE": "ENGLISH You must be willing to sacrifice everything for a seconds chance at life. Was it worth it?"
+  }
+}
