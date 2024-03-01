@@ -1,3 +1,3 @@
 # ReturnsDroneRevive
 Risk of Rain 2 mod.
-Revive as a drone in Risk of Rain 2, similarly to in RoR Returns.
+Teammates revive as a gunner drone, similarly to in RoR Returns.

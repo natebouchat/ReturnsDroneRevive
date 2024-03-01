@@ -39,6 +39,7 @@ namespace ReturnsDroneRevive
 
         private void Run_onRunStartGlobal(Run obj) {
             playerInstance = PlayerCharacterMasterController.instances[0].master;
+            playerInstance.inventory.onInventoryChanged += DroneInventoryChanged;
         }
 
         private void Stage_onServerStageBegin(Stage obj) {
@@ -54,6 +55,50 @@ namespace ReturnsDroneRevive
             }
         }
 
+        private void DroneInventoryChanged() {
+            if(isTransformed && playerInstance.inventory.itemAcquisitionOrder.Count > 1) {
+                ItemIndex addedItem = playerInstance.inventory.itemAcquisitionOrder[1];
+                for(int i = 0; i < savedInventory.Count; i++) {
+                    if(savedInventory[i] == addedItem) {
+                        savedInventoryStacks[i]++;
+                        playerInstance.inventory.RemoveItem(addedItem);
+                        return;
+                    }
+                }
+                savedInventory.Add(addedItem);
+                savedInventoryStacks.Add(1);
+                playerInstance.inventory.RemoveItem(addedItem);
+            }
+        }
+
+        private void CreateItem() {
+            droneCompartmentItem = ScriptableObject.CreateInstance<ItemDef>();
+
+            droneCompartmentItem.name = "DRONECOMPARTMENT_NAME";
+            droneCompartmentItem.nameToken = "DRONECOMPARTMENT_NAME";
+            droneCompartmentItem.pickupToken = "DRONECOMPARTMENT_PICKUP";
+            droneCompartmentItem.descriptionToken = "DRONECOMPARTMENT_DESC";
+            droneCompartmentItem.loreToken = "DRONECOMPARTMENT_LORE";
+            
+            // Force NoTier so it doesn't end up in item pool
+            #pragma warning disable Publicizer001
+            #pragma warning disable CS0618
+                droneCompartmentItem.deprecatedTier = ItemTier.NoTier;
+            #pragma warning restore Publicizer001
+            #pragma warning restore CS0618
+
+            string bundleName = "dronereviveassets";
+            var assets = AssetBundle.LoadFromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Info.Location), bundleName));
+            var chestIcon = assets.LoadAsset<Sprite>("Assets/chest.png");
+            droneCompartmentItem.pickupIconSprite = chestIcon;
+
+            droneCompartmentItem.canRemove = false;
+            droneCompartmentItem.hidden = false;
+            var displayRules = new ItemDisplayRuleDict(null);
+
+            ItemAPI.Add(new CustomItem(droneCompartmentItem, displayRules));
+        }
+
         private IEnumerator TrySpawnAsDrone() {
             yield return new WaitForSeconds(1.5f);
             int num;
@@ -67,28 +112,6 @@ namespace ReturnsDroneRevive
                 yield break;
             }
             SpawnAsDrone();
-        }
-
-        private void CreateItem() {
-            droneCompartmentItem = ScriptableObject.CreateInstance<ItemDef>();
-
-            droneCompartmentItem.name = "DRONECOMPARTMENT_NAME";
-            droneCompartmentItem.nameToken = "DRONECOMPARTMENT_NAME";
-            droneCompartmentItem.pickupToken = "DRONECOMPARTMENT_PICKUP";
-            droneCompartmentItem.descriptionToken = "DRONECOMPARTMENT_DESC";
-            droneCompartmentItem.loreToken = "DRONECOMPARTMENT_LORE";
-            droneCompartmentItem.deprecatedTier = ItemTier.NoTier;
-
-            string bundleName = "dronereviveassets";
-            var assets = AssetBundle.LoadFromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Info.Location), bundleName));
-            var chestIcon = assets.LoadAsset<Sprite>("Assets/chest.png");
-            droneCompartmentItem.pickupIconSprite = chestIcon;
-
-            droneCompartmentItem.canRemove = false;
-            droneCompartmentItem.hidden = false;
-            var displayRules = new ItemDisplayRuleDict(null);
-
-            ItemAPI.Add(new CustomItem(droneCompartmentItem, displayRules));
         }
 
         private void SpawnAsDrone() {
@@ -112,9 +135,8 @@ namespace ReturnsDroneRevive
             else {
                 playerInstance.bodyPrefab = playerSelectedCharacterBody;
             }
-
-            AddBackInventory();
             isTransformed = false;
+            AddBackInventory();
         }
 
         private void ChangePlayerPrefab(CharacterMaster master) {
