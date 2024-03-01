@@ -42,16 +42,16 @@ namespace ReturnsDroneRevive
         }
 
         private void Stage_onServerStageBegin(Stage obj) {
-            Log.Info($"New Stage: {nameof(Stage_onServerStageBegin)}");
-            Log.Info($"Prefab Body: {playerInstance.bodyPrefab.name}");
-            if(playerInstance.bodyPrefab.name.Equals("Drone1Body")) {
-                //pawnAsCharacter();
+            if(isTransformed) {
+                SpawnAsCharacter(false);
             }
         }
 
         private void GlobalEventManager_onCharacterDeathGlobal(DamageReport report)
         {
-            TrySpawnAsDrone();
+            if(!isTransformed) {
+                TrySpawnAsDrone();
+            }
         }
 
         private IEnumerator TrySpawnAsDrone() {
@@ -77,16 +77,12 @@ namespace ReturnsDroneRevive
             droneCompartmentItem.pickupToken = "DRONECOMPARTMENT_PICKUP";
             droneCompartmentItem.descriptionToken = "DRONECOMPARTMENT_DESC";
             droneCompartmentItem.loreToken = "DRONECOMPARTMENT_LORE";
-
-            //NoTier
             droneCompartmentItem.deprecatedTier = ItemTier.NoTier;
 
             string bundleName = "dronereviveassets";
             var assets = AssetBundle.LoadFromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Info.Location), bundleName));
             var chestIcon = assets.LoadAsset<Sprite>("Assets/chest.png");
-
             droneCompartmentItem.pickupIconSprite = chestIcon;
-            //droneCompartmentItem.pickupModelPrefab = Resources.Load<GameObject>("Prefabs/PickupModels/PickupMystery");
 
             droneCompartmentItem.canRemove = false;
             droneCompartmentItem.hidden = false;
@@ -96,7 +92,7 @@ namespace ReturnsDroneRevive
         }
 
         private void SpawnAsDrone() {
-            Log.Info("Player pressed F2. Spawning as Drone");
+            Log.Info("Spawning as Drone");
             playerSelectedCharacterBody = playerInstance.bodyPrefab;
             SaveAndRemoveInventory();
 
@@ -106,11 +102,16 @@ namespace ReturnsDroneRevive
             isTransformed = true;
         }
 
-        private void SpawnAsCharacter() {
-            Log.Info("Player pressed F2. Spawning as Character");
-            CharacterMaster master = playerInstance;
-            master.bodyPrefab = playerSelectedCharacterBody;
-            ChangePlayerPrefab(master);
+        private void SpawnAsCharacter(bool forceRespawn) {
+            Log.Info("Spawning as Character");
+            if(forceRespawn) {
+                CharacterMaster master = playerInstance;
+                master.bodyPrefab = playerSelectedCharacterBody;
+                ChangePlayerPrefab(master);
+            }
+            else {
+                playerInstance.bodyPrefab = playerSelectedCharacterBody;
+            }
 
             AddBackInventory();
             isTransformed = false;
@@ -128,10 +129,6 @@ namespace ReturnsDroneRevive
         private void SaveAndRemoveInventory() {
             int inventoryItemCount = playerInstance.inventory.itemAcquisitionOrder.Count;
             for(int i = 0; i < inventoryItemCount; i++) {
-                Log.Info($"Inventory Count: {playerInstance.inventory.itemAcquisitionOrder.Count}");
-                for(int k = 0; k < playerInstance.inventory.itemAcquisitionOrder.Count; k++) {
-                    Log.Info($"Item: {ItemCatalog.GetItemDef(playerInstance.inventory.itemAcquisitionOrder[k]).name}");
-                }
                 savedInventory.Add(playerInstance.inventory.itemAcquisitionOrder[0]);
                 savedInventoryStacks.Add(playerInstance.inventory.GetItemCount(savedInventory[i]));
                 for(int j = 0; j < savedInventoryStacks[i]; j++) {
@@ -163,7 +160,7 @@ namespace ReturnsDroneRevive
                     SpawnAsDrone();
                 }
                 else {
-                    SpawnAsCharacter();
+                    SpawnAsCharacter(true);
                 }
             }
             if (Input.GetKeyDown(KeyCode.F3)) {
