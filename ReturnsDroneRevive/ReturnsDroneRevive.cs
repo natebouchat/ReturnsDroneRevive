@@ -1,9 +1,11 @@
 using System.Collections;
+using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Configuration;
 using R2API;
 using RoR2;
 using UnityEngine;
+using UnityEngine.Networking;
 
 namespace ReturnsDroneRevive
 {
@@ -18,16 +20,19 @@ namespace ReturnsDroneRevive
         public const string PluginName = "ReturnsDroneRevive";
         public const string PluginVersion = "1.0.0";
 
-        private static bool isTransformed = false;
-        private static GameObject playerSelectedCharacterBody;
-        private static CharacterMaster playerInstance;
+        public class PlayerStorage
+        {
+            public CharacterMaster playerInstance = null;
+            public GameObject savedCharacterBody = null;
+            public List<ItemIndex> savedInventory = new List<ItemIndex>();
+            public List<int> savedInventoryStacks = new List<int>();
+        }
+
+        public List<PlayerStorage> playerStorage = new List<PlayerStorage>();
+        private static InventoryManager inventoryManager;
 
         private static ConfigFile configFile;
         private static ConfigEntry<bool> disableInventory;
-        private static KeyCode keybindForceSwap;
-        private static KeyCode keybindAscend;
-        private static KeyCode keybindDescend;
-
 
         public void Awake()
         {
@@ -35,139 +40,102 @@ namespace ReturnsDroneRevive
 
             SetFromConfig();
             if(disableInventory.Value) {
-                InventoryManager.Init(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Info.Location), "dronereviveassets"));
+                inventoryManager = new InventoryManager(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Info.Location), "dronereviveassets"));
             }
-
             Run.onRunStartGlobal += Run_onRunStartGlobal;
-            Stage.onServerStageBegin += Stage_onServerStageBegin;
-            GlobalEventManager.onCharacterDeathGlobal += GlobalEventManager_onCharacterDeathGlobal;
+
             Log.Info(nameof(Awake) + " done.");
+        }
+
+        private void Run_onRunStartGlobal(Run obj) {
+            if(NetworkServer.active) {
+                Stage.onServerStageBegin += Stage_onServerStageBegin;
+                On.RoR2.GlobalEventManager.OnPlayerCharacterDeath += new On.RoR2.GlobalEventManager.hook_OnPlayerCharacterDeath(OnPlayerDeath);
+            }
         }
 
         private void SetFromConfig() {
             configFile = new ConfigFile(Paths.ConfigPath + "//ReturnsDroneRevive.cfg", true);
-            
             disableInventory = configFile.Bind("DroneRevive", "Disable Inventory as Drone", true, "All collected items will be disabled as a drone. Items are returned next stage.");
-            ConfigEntry<string> keybindForceSwapString = configFile.Bind("DroneRevive", "Force Swap Keybind", "None", "Keybind for force swap transform to Drone/Character. Will also respawn if player is dead.");
-            ConfigEntry<string> keybindAscendString = configFile.Bind("DroneRevive", "Ascend as Drone Keybind", "Space", "Keybind to ascend as a drone.");
-            ConfigEntry<string> keybindDescendString = configFile.Bind("DroneRevive", "Descend as Drone Keybind", "LeftShift", "Keybind to descend as a drone");
-       
-            if(!System.Enum.TryParse(keybindForceSwapString.Value, out keybindForceSwap)) {
-                Log.Error("Failed Parse on \"Force Swap Keybind\". Defaulting to \"None\".");
-                keybindForceSwap = KeyCode.None;
-            }
-            if(!System.Enum.TryParse(keybindAscendString.Value, out keybindAscend)) {
-                Log.Error("Failed Parse on \"Ascend as Drone Keybind\". Defaulting to \"Space\".");
-                keybindAscend = KeyCode.Space;
-            }
-            if(!System.Enum.TryParse(keybindDescendString.Value, out keybindDescend)) {
-                Log.Error("Failed Parse on \"Descend as Drone Keybind\". Defaulting to \"LeftShift\".");
-                keybindDescend = KeyCode.LeftShift;
-            }
-        }
-
-        private void Run_onRunStartGlobal(Run obj) {
-            playerInstance = PlayerCharacterMasterController.instances[0].master;
-            isTransformed = false;
-            if(disableInventory.Value) {
-                InventoryManager.ClearSavedInventory();
-                playerInstance.inventory.onInventoryChanged += DroneInventoryChanged;
-            }
         }
 
         private void Stage_onServerStageBegin(Stage obj) {
-            if(isTransformed) {
-                SpawnAsCharacter(false);
-            }
+            ResetToCharacters();
         }
-
-        private void GlobalEventManager_onCharacterDeathGlobal(DamageReport report)
+        
+        private void OnPlayerDeath(On.RoR2.GlobalEventManager.orig_OnPlayerCharacterDeath orig, GlobalEventManager self, DamageReport damagereport, NetworkUser networkuser)
         {
-            if(!isTransformed) {
-                TrySpawnAsDrone();
+            orig.Invoke(self, damagereport, networkuser);
+            Log.Info($"Player has died: {networkuser.master.bodyPrefab.name}");
+
+            if(!networkuser.master.bodyPrefab.name.Equals("Drone1Body")) {
+                PlayerStorage deadPlayer = new PlayerStorage();
+                deadPlayer.playerInstance = networkuser.master;
+                deadPlayer.savedCharacterBody = networkuser.master.bodyPrefab;
+                if(disableInventory.Value) {
+                    inventoryManager.SaveAndRemoveInventory(deadPlayer);
+                    deadPlayer.playerInstance.inventory.onInventoryChanged += DroneInventoryChanged;
+                }
+                playerStorage.Add(deadPlayer);
+                StartCoroutine(TrySpawnAsDrone(deadPlayer));
             }
         }
 
         private void DroneInventoryChanged() {
-            if(isTransformed && playerInstance.inventory.itemAcquisitionOrder.Count > 1 && disableInventory.Value) {
-                InventoryManager.StoreDroneCollectedItem(playerInstance);
+            if(!disableInventory.Value) {return;}
+
+            for(int i = 0; i < playerStorage.Count; i++) {
+                if(playerStorage[i].playerInstance.inventory.itemAcquisitionOrder.Count > 1) {
+                    inventoryManager.StoreDroneCollectedItem(playerStorage[i]);
+                }
             }
         }
 
-        private IEnumerator TrySpawnAsDrone() {
+        private IEnumerator TrySpawnAsDrone(PlayerStorage deadPlayer) {
+            Log.Info("Attempting to Spawn as Drone");
             yield return new WaitForSeconds(1.5f);
             int num;
-            if (playerInstance == null) {
+            if (deadPlayer.playerInstance == null) {
                 num = 0;
             }
             else {
-                num = (((playerInstance != null) ? new bool?(playerInstance.IsDeadAndOutOfLivesServer()) : null) == false) ? 1 : 0;
+                num = (((deadPlayer.playerInstance != null) ? new bool?(deadPlayer.playerInstance.IsDeadAndOutOfLivesServer()) : null) == false) ? 1 : 0;
             }
             if (num != 0 || Run.instance.isGameOverServer) {
+                Log.Info("Player is not out of lives or is null");
                 yield break;
             }
-            SpawnAsDrone();
+            SpawnAsDrone(deadPlayer.playerInstance.deathFootPosition, deadPlayer);
         }
 
-        private void SpawnAsDrone() {
+        private void SpawnAsDrone(Vector3 spawnPosition, PlayerStorage deadPlayer) {
             Log.Info("Spawning as Drone");
-            playerSelectedCharacterBody = playerInstance.bodyPrefab;
-            if(disableInventory.Value) {
-                InventoryManager.SaveAndRemoveInventory(playerInstance);
-            }
 
-            CharacterMaster master = playerInstance;
-            master.bodyPrefab = BodyCatalog.GetBodyPrefab(BodyCatalog.FindBodyIndex("Drone1Body"));
-            ChangePlayerPrefab(master);
-            isTransformed = true;
+            deadPlayer.playerInstance.bodyPrefab = BodyCatalog.GetBodyPrefab(BodyCatalog.FindBodyIndex("Drone1Body"));
+            ChangePlayerPrefab(deadPlayer.playerInstance, spawnPosition);
         }
 
-        private void SpawnAsCharacter(bool forceRespawn) {
-            Log.Info("Spawning as Character");
-            if(forceRespawn) {
-                CharacterMaster master = playerInstance;
-                master.bodyPrefab = playerSelectedCharacterBody;
-                ChangePlayerPrefab(master);
+        private void ResetToCharacters() {
+            Log.Info("Resetting character bodies");
+            for(int i = 0; i < playerStorage.Count; i++) {
+                if(playerStorage[i].playerInstance != null && playerStorage[i].playerInstance.bodyPrefab.name.Equals("Drone1Body")) {
+                    playerStorage[i].playerInstance.bodyPrefab = playerStorage[i].savedCharacterBody;
+                    if(disableInventory.Value) {
+                        playerStorage[i].playerInstance.inventory.onInventoryChanged -= DroneInventoryChanged;
+                        inventoryManager.AddBackInventory(playerStorage[i]);
+                    }
+                }
             }
-            else {
-                playerInstance.bodyPrefab = playerSelectedCharacterBody;
-            }
-            isTransformed = false;
-            if(disableInventory.Value) {
-                InventoryManager.AddBackInventory(playerInstance);
-            }
+            playerStorage.Clear();
         }
 
-        private void ChangePlayerPrefab(CharacterMaster master) {
+        private void ChangePlayerPrefab(CharacterMaster master, Vector3 spawnPosition, Quaternion spawnRotation = default) {
             #pragma warning disable Publicizer001
                 var pcmc = master.playerCharacterMasterController;
                 master.playerCharacterMasterController = null; // prevent metamorphosis rerolling the body for players
-                master.Respawn(master.GetBody().transform.position, master.GetBody().transform.rotation);
+                master.Respawn(spawnPosition, spawnRotation);
                 master.playerCharacterMasterController = pcmc;
             #pragma warning restore Publicizer001
-        }
-
-        //The Update() method is run on every frame of the game.
-        private void Update()
-        {
-            if (Input.GetKeyDown(keybindForceSwap))
-            {
-                if(!isTransformed) {
-                    SpawnAsDrone();
-                }
-                else {
-                    SpawnAsCharacter(true);
-                }
-            }
-            if(isTransformed) {
-                // Using Time.deltaTime causes jittery acsension
-                if (Input.GetKey(keybindAscend)) {
-                    playerInstance.GetBodyObject().transform.Translate(Vector3.up * 0.2f);
-                }
-                else if (Input.GetKey(keybindDescend)){
-                    playerInstance.GetBodyObject().transform.Translate(Vector3.down * 0.2f);
-                }
-            }
         }
     }
 }
