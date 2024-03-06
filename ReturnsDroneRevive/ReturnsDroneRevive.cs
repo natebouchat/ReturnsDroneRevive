@@ -72,10 +72,6 @@ namespace ReturnsDroneRevive
                 PlayerStorage deadPlayer = new PlayerStorage();
                 deadPlayer.playerInstance = networkuser.master;
                 deadPlayer.savedCharacterBody = networkuser.master.bodyPrefab;
-                if(disableInventory.Value) {
-                    inventoryManager.SaveAndRemoveInventory(deadPlayer);
-                    deadPlayer.playerInstance.inventory.onInventoryChanged += DroneInventoryChanged;
-                }
                 playerStorage.Add(deadPlayer);
                 StartCoroutine(TrySpawnAsDrone(deadPlayer));
             }
@@ -102,7 +98,7 @@ namespace ReturnsDroneRevive
                 num = (((deadPlayer.playerInstance != null) ? new bool?(deadPlayer.playerInstance.IsDeadAndOutOfLivesServer()) : null) == false) ? 1 : 0;
             }
             if (num != 0 || Run.instance.isGameOverServer) {
-                Log.Info("Player is not out of lives or is null");
+                Log.Info("Player is not out of lives");
                 yield break;
             }
             SpawnAsDrone(deadPlayer.playerInstance.deathFootPosition, deadPlayer);
@@ -111,6 +107,10 @@ namespace ReturnsDroneRevive
         private void SpawnAsDrone(Vector3 spawnPosition, PlayerStorage deadPlayer) {
             Log.Info("Spawning as Drone");
 
+            if(disableInventory.Value) {
+                inventoryManager.SaveAndRemoveInventory(deadPlayer);
+                deadPlayer.playerInstance.inventory.onInventoryChanged += DroneInventoryChanged;
+            }
             deadPlayer.playerInstance.bodyPrefab = BodyCatalog.GetBodyPrefab(BodyCatalog.FindBodyIndex("Drone1Body"));
             ChangePlayerPrefab(deadPlayer.playerInstance, spawnPosition);
         }
@@ -123,6 +123,7 @@ namespace ReturnsDroneRevive
                     if(disableInventory.Value) {
                         playerStorage[i].playerInstance.inventory.onInventoryChanged -= DroneInventoryChanged;
                         inventoryManager.AddBackInventory(playerStorage[i]);
+                        inventoryManager.ResetRegenScrap(playerStorage[i]);
                     }
                 }
             }

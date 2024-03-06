@@ -79,5 +79,10 @@ namespace ReturnsDroneRevive
             playerStorage.savedInventory.Clear();
             playerStorage.savedInventoryStacks.Clear();
         }
+
+        public void ResetRegenScrap(ReturnsDroneRevive.PlayerStorage playerStorage) {
+            playerStorage.playerInstance.inventory.GiveItem(ItemCatalog.FindItemIndex("RegeneratingScrap"), playerStorage.playerInstance.inventory.GetItemCount(ItemCatalog.FindItemIndex("RegeneratingScrapConsumed")));
+            playerStorage.playerInstance.inventory.RemoveItem(ItemCatalog.FindItemIndex("RegeneratingScrapConsumed"), playerStorage.playerInstance.inventory.GetItemCount(ItemCatalog.FindItemIndex("RegeneratingScrapConsumed")));
+        }
     }
 }
